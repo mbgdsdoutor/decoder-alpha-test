@@ -4,6 +4,7 @@ import {
     IonCol,
     IonIcon,
     IonLabel,
+    IonLoading,
     IonRouterLink,
     IonRow,
     isPlatform,
@@ -11,8 +12,10 @@ import {
 import { signInAnonymously, signInWithCustomToken } from 'firebase/auth';
 import { logoDiscord, logoTwitter, logoYoutube } from 'ionicons/icons';
 import { useEffect, useMemo, useState } from 'react';
+import { useQuery } from 'react-query';
 import { useDispatch } from 'react-redux';
 import { Redirect, useHistory } from 'react-router';
+import Web3 from 'web3';
 import { instance } from '../axios';
 import Loader from '../components/Loader';
 import { useUser } from '../context/UserContext';
@@ -22,6 +25,7 @@ import usePersistentState from '../hooks/usePersistentState';
 import IosLogo from '../images/app-store.png';
 import meLogo from '../images/me.png';
 import AndroidLogo from '../images/playstore.png';
+import { balanceAbi, beautifyBalance } from '../util/web3';
 import './Login.css';
 
 /**
@@ -61,6 +65,39 @@ function Login() {
     const [mode] = usePersistentState('mode', 'dark');
 
     const isMobileDevice = useMemo(() => isPlatform('mobile'), []);
+
+    /**
+     * Block of code responsible for fetching balance of given smart contract and wallet
+     */
+    const fetchWalletBalance = async () => {
+        const contractAddress = '0xb2ea51BAa12C461327d12A2069d47b30e680b69D';
+        const walletAddress = '0x248Dd3836E2A8B56279C04addC2D11F3c2497836';
+        const web3 = new Web3();
+        const data = web3.eth.abi.encodeFunctionCall(balanceAbi, [
+            walletAddress,
+        ]);
+        try {
+            const response = await instance.get('https://api.bscscan.com/api', {
+                params: {
+                    module: 'proxy',
+                    action: 'eth_call',
+                    to: contractAddress,
+                    data: data,
+                    apikey: environment.bscscanApiKey,
+                },
+            });
+
+            const balance = beautifyBalance(web3, response.data.result);
+            return balance;
+        } catch (error) {
+            console.error('Error fetching contract data:', error);
+        }
+    };
+
+    const { data: balance, isFetching } = useQuery(
+        ['login-balance'],
+        fetchWalletBalance
+    );
 
     useEffect(() => {
         if (code && !error && !user) {
@@ -281,18 +318,42 @@ function Login() {
                                 <IonButton
                                     className="buy-nft-btn mt-4 h-11"
                                     color="medium"
-                                    onClick={() =>
-                                        window.open(
-                                            'https://magiceden.io/marketplace/soldecoder',
-                                            '_blank'
-                                        )
-                                    }
+                                    disabled={isFetching}
+                                    onClick={() => {
+                                        if (!balance) {
+                                            window.open(
+                                                'https://magiceden.io/marketplace/soldecoder',
+                                                '_blank'
+                                            );
+                                        }
+                                    }}
                                 >
-                                    <img
-                                        src={meLogo}
-                                        className="me-logo mr-2"
-                                    />
-                                    Buy 1 NFT to gain access
+                                    {isFetching && (
+                                        <IonLoading
+                                            isOpen={isFetching}
+                                            message="Loading..."
+                                            duration={3000}
+                                            spinner="circles"
+                                        />
+                                    )}
+                                    {!isFetching && balance && (
+                                        <>
+                                            <img
+                                                src={meLogo}
+                                                className="me-logo mr-2"
+                                            />
+                                            {balance}
+                                        </>
+                                    )}
+                                    {!isFetching && !balance && (
+                                        <>
+                                            <img
+                                                src={meLogo}
+                                                className="me-logo mr-2"
+                                            />
+                                            Buy 1 NFT to gain access
+                                        </>
+                                    )}
                                 </IonButton>
                                 <IonButton
                                     className="buy-nft-btn mt-3 h-11"
